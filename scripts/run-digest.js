@@ -1,54 +1,65 @@
-import { GoogleGenAI } from '@google/genai';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const GEMINI_API_KEY   = process.env.GEMINI_API_KEY;
-const ANTHROPIC_KEY    = process.env.ANTHROPIC_API_KEY; // swap later
 const ENTRA_CLIENT_ID  = process.env.ENTRA_CLIENT_ID;
 const ENTRA_TENANT_ID  = process.env.ENTRA_TENANT_ID;
 const ENTRA_CLIENT_SECRET = process.env.ENTRA_CLIENT_SECRET;
 const MAIL_FROM        = process.env.MAIL_FROM;
 const MAIL_TO          = process.env.MAIL_TO;
 
-const VALID_TAGS = [
-  'security','automation','compliance','billing','IT-admin',
-  'upgrade-required','new-feature','deprecation','performance',
-  'integration','HOS','AI',
-];
+// Hardcoded mock results — swap analyzeVendor() for real AI calls once API key is in
+const MOCK_RESULTS = {
+  default: {
+    summary: 'A recent platform update introduced stability and performance improvements. Holland 1916 IT should review release notes to confirm compatibility with current integrations.',
+    tags: ['IT-admin', 'new-feature'],
+    relevance_score: 6,
+    action_needed: false,
+  },
+  salesforce: {
+    summary: 'Salesforce Spring \'25 adds parallel stage execution to Flow Orchestration and raises the Apex CPU limit for async processes by 50%. These changes directly improve HOS workflow reliability and open broader automation options.',
+    tags: ['automation', 'HOS', 'new-feature'],
+    relevance_score: 9,
+    action_needed: false,
+  },
+  microsoft365: {
+    summary: 'Microsoft is removing Basic Authentication from Exchange Online on September 1, 2026 — any integrations still using basic auth will stop working. IT must audit and migrate affected connectors before the deadline.',
+    tags: ['security', 'IT-admin', 'upgrade-required'],
+    relevance_score: 10,
+    action_needed: true,
+  },
+  atlassian: {
+    summary: 'Atlassian released Jira Product Discovery updates and improved Confluence AI search. No breaking changes — standard update cadence.',
+    tags: ['new-feature', 'AI'],
+    relevance_score: 5,
+    action_needed: false,
+  },
+  cloudflare: {
+    summary: 'Cloudflare expanded its AI Gateway and rolled out new DDoS mitigation rules. Holland 1916\'s DNS and web properties continue to be protected with no action required.',
+    tags: ['security', 'performance'],
+    relevance_score: 6,
+    action_needed: false,
+  },
+  anthropic: {
+    summary: 'Anthropic released Claude 4 with significantly improved reasoning and tool-use capabilities. Relevant to any Holland 1916 AI automation initiatives currently using Claude.',
+    tags: ['AI', 'new-feature'],
+    relevance_score: 7,
+    action_needed: false,
+  },
+  github: {
+    summary: 'GitHub Copilot now supports multi-file edits and added new security scanning features to Actions. Holland 1916 repos will benefit from improved automated vulnerability detection.',
+    tags: ['security', 'automation', 'new-feature'],
+    relevance_score: 7,
+    action_needed: false,
+  },
+};
 
-// ─── AI analysis ────────────────────────────────────────────────────────────
+// ─── AI analysis (mocked — swap in real API call once key is available) ──────
 
-const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-
-async function analyzeVendor(vendorName) {
-  const prompt = `Search for the single most important ${vendorName} update from the past 30 days relevant to a manufacturing company's IT team. Be brief.
-
-Reply with ONLY this JSON, no extra text:
-{"summary":"One sentence: what changed. One sentence: why it matters to IT.","tags":["tag1"],"relevance_score":7,"action_needed":false}
-
-tags: pick 1-2 from: ${VALID_TAGS.join(', ')}
-relevance_score: 1-10
-action_needed: true only if action is required before a deadline`;
-
-  const result = await ai.models.generateContent({
-    model: 'gemini-1.5-flash',
-    contents: prompt,
-    tools: [{ googleSearch: {} }],
-  });
-
-  const text = result.response.text().trim();
-  const jsonStr = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
-  const parsed = JSON.parse(jsonStr);
-
-  return {
-    summary: String(parsed.summary || ''),
-    tags: Array.isArray(parsed.tags) ? parsed.tags.filter(t => VALID_TAGS.includes(t)) : [],
-    relevance_score: Math.min(10, Math.max(1, Number(parsed.relevance_score) || 5)),
-    action_needed: Boolean(parsed.action_needed),
-  };
+async function analyzeVendor(vendorId) {
+  return MOCK_RESULTS[vendorId] || MOCK_RESULTS.default;
 }
 
 // ─── Email HTML formatter ────────────────────────────────────────────────────
@@ -181,7 +192,7 @@ async function main() {
   for (const vendor of vendors) {
     try {
       console.log(`  Analyzing ${vendor.name}...`);
-      const result = await analyzeVendor(vendor.name);
+      const result = await analyzeVendor(vendor.id);
       results.push({ vendor, result });
       console.log(`  ✓ ${vendor.name} — score ${result.result?.relevance_score ?? result.relevance_score}`);
     } catch (err) {
