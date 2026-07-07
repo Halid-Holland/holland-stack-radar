@@ -4,13 +4,22 @@ import { dirname, join } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const ENTRA_CLIENT_ID  = process.env.ENTRA_CLIENT_ID;
-const ENTRA_TENANT_ID  = process.env.ENTRA_TENANT_ID;
-const ENTRA_CLIENT_SECRET = process.env.ENTRA_CLIENT_SECRET;
-const MAIL_FROM        = process.env.MAIL_FROM;
-const MAIL_TO          = process.env.MAIL_TO;
+const RUN_MODE = process.env.RUN_MODE || 'mock'; // mock | test | production
 
-// Hardcoded mock results — swap analyzeVendor() for real AI calls once API key is in
+const ENTRA_CLIENT_ID     = process.env.ENTRA_CLIENT_ID;
+const ENTRA_TENANT_ID     = process.env.ENTRA_TENANT_ID;
+const ENTRA_CLIENT_SECRET = process.env.ENTRA_CLIENT_SECRET;
+const MAIL_FROM           = process.env.MAIL_FROM;
+const MAIL_TO             = process.env.MAIL_TO;
+
+const VALID_TAGS = [
+  'security','automation','compliance','billing','IT-admin',
+  'upgrade-required','new-feature','deprecation','performance',
+  'integration','HOS','AI',
+];
+
+// ─── Mock data ───────────────────────────────────────────────────────────────
+
 const MOCK_RESULTS = {
   default: {
     summary: 'A recent platform update introduced stability and performance improvements. Holland 1916 IT should review release notes to confirm compatibility with current integrations.',
@@ -19,7 +28,7 @@ const MOCK_RESULTS = {
     action_needed: false,
   },
   salesforce: {
-    summary: 'Salesforce Spring \'25 adds parallel stage execution to Flow Orchestration and raises the Apex CPU limit for async processes by 50%. These changes directly improve HOS workflow reliability and open broader automation options.',
+    summary: "Salesforce Spring '25 adds parallel stage execution to Flow Orchestration and raises the Apex CPU limit for async processes by 50%. These changes directly improve HOS workflow reliability and open broader automation options.",
     tags: ['automation', 'HOS', 'new-feature'],
     relevance_score: 9,
     action_needed: false,
@@ -37,7 +46,7 @@ const MOCK_RESULTS = {
     action_needed: false,
   },
   cloudflare: {
-    summary: 'Cloudflare expanded its AI Gateway and rolled out new DDoS mitigation rules. Holland 1916\'s DNS and web properties continue to be protected with no action required.',
+    summary: "Cloudflare expanded its AI Gateway and rolled out new DDoS mitigation rules. Holland 1916's DNS and web properties continue to be protected with no action required.",
     tags: ['security', 'performance'],
     relevance_score: 6,
     action_needed: false,
@@ -56,13 +65,50 @@ const MOCK_RESULTS = {
   },
 };
 
-// ─── AI analysis (mocked — swap in real API call once key is available) ──────
+// ─── AI analysis ─────────────────────────────────────────────────────────────
 
-async function analyzeVendor(vendorId) {
+async function analyzeVendorMock(vendorId) {
   return MOCK_RESULTS[vendorId] || MOCK_RESULTS.default;
 }
 
-// ─── Email HTML formatter ────────────────────────────────────────────────────
+async function analyzeVendorAI(vendorName) {
+  // Swap this import at the top once the API key is confirmed working
+  const { GoogleGenAI } = await import('@google/genai');
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+  const prompt = `Search for the single most important ${vendorName} update from the past 30 days relevant to a manufacturing company's IT team. Be brief.
+
+Reply with ONLY this JSON, no extra text:
+{"summary":"One sentence: what changed. One sentence: why it matters to IT.","tags":["tag1"],"relevance_score":7,"action_needed":false}
+
+tags: pick 1-2 from: ${VALID_TAGS.join(', ')}
+relevance_score: 1-10
+action_needed: true only if action is required before a deadline`;
+
+  const result = await ai.models.generateContent({
+    model: 'gemini-2.0-flash',
+    contents: prompt,
+    tools: [{ googleSearch: {} }],
+  });
+
+  const text = result.response.text().trim();
+  const jsonStr = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+  const parsed = JSON.parse(jsonStr);
+
+  return {
+    summary: String(parsed.summary || ''),
+    tags: Array.isArray(parsed.tags) ? parsed.tags.filter(t => VALID_TAGS.includes(t)) : [],
+    relevance_score: Math.min(10, Math.max(1, Number(parsed.relevance_score) || 5)),
+    action_needed: Boolean(parsed.action_needed),
+  };
+}
+
+async function analyzeVendor(vendor) {
+  if (RUN_MODE === 'mock') return analyzeVendorMock(vendor.id);
+  return analyzeVendorAI(vendor.name);
+}
+
+// ─── Email HTML formatter ─────────────────────────────────────────────────────
 
 function scoreColor(score) {
   if (score >= 8) return '#EF4444';
@@ -70,13 +116,14 @@ function scoreColor(score) {
   return '#10B981';
 }
 
-function buildEmailHTML(results) {
+function buildEmailHTML(results, mode) {
   const date = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   });
 
   const actionCount = results.filter(r => r.result.action_needed).length;
-  const subject = `Holland Newsletter Automator: Weekly Digest — ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}` +
+  const modeLabel = mode !== 'production' ? ` [${mode.toUpperCase()}]` : '';
+  const subject = `Holland Newsletter Automator: Weekly Digest${modeLabel} — ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}` +
     (actionCount > 0 ? ` (${actionCount} action${actionCount > 1 ? 's' : ''} needed)` : '');
 
   const tocRows = results.map((r, i) =>
@@ -129,7 +176,7 @@ function buildEmailHTML(results) {
   return { html, subject };
 }
 
-// ─── Microsoft Graph email sender ────────────────────────────────────────────
+// ─── Microsoft Graph email sender ─────────────────────────────────────────────
 
 async function sendEmail(subject, html) {
   const tokenRes = await fetch(
@@ -174,27 +221,29 @@ async function sendEmail(subject, html) {
   }
 }
 
-// ─── Main ────────────────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
+  console.log(`RUN_MODE: ${RUN_MODE}`);
+
   const vendorsPath = join(__dirname, '..', 'vendors.json');
   const allVendors = JSON.parse(readFileSync(vendorsPath, 'utf8'));
   let vendors = allVendors.filter(v => v.active);
-  if (process.env.TEST_MODE === 'true') {
+
+  if (RUN_MODE === 'test') {
     vendors = vendors.slice(0, 1);
-    console.log('TEST_MODE: limiting to 1 vendor');
+    console.log('Test mode: limiting to 1 vendor');
   }
 
-  console.log(`Running digest for ${vendors.length} vendors...`);
+  console.log(`Running digest for ${vendors.length} vendor(s)...`);
 
   const results = [];
-
   for (const vendor of vendors) {
     try {
       console.log(`  Analyzing ${vendor.name}...`);
-      const result = await analyzeVendor(vendor.id);
+      const result = await analyzeVendor(vendor);
       results.push({ vendor, result });
-      console.log(`  ✓ ${vendor.name} — score ${result.result?.relevance_score ?? result.relevance_score}`);
+      console.log(`  ✓ ${vendor.name} — score ${result.relevance_score}`);
     } catch (err) {
       console.error(`  ✗ ${vendor.name} failed: ${err.message}`);
     }
@@ -205,7 +254,7 @@ async function main() {
     process.exit(1);
   }
 
-  const { html, subject } = buildEmailHTML(results);
+  const { html, subject } = buildEmailHTML(results, RUN_MODE);
   console.log(`\nSending digest to ${MAIL_TO}...`);
   await sendEmail(subject, html);
   console.log('Done. Digest sent.');

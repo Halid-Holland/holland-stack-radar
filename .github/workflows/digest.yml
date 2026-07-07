@@ -5,12 +5,15 @@ on:
     - cron: '0 13 * * 1'  # Every Monday 8:00 AM CT (13:00 UTC)
   workflow_dispatch:
     inputs:
-      test_mode:
-        description: 'Test mode — run 1 vendor only'
+      run_mode:
+        description: 'Run mode'
         required: false
-        default: 'false'
+        default: 'mock'
         type: choice
-        options: ['false', 'true']
+        options:
+          - mock
+          - test
+          - production
 
 jobs:
   run-digest:
@@ -30,11 +33,11 @@ jobs:
 
       - name: Run digest
         env:
+          RUN_MODE:             ${{ github.event.inputs.run_mode || 'production' }}
           GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
           ENTRA_CLIENT_ID:      ${{ secrets.ENTRA_CLIENT_ID }}
           ENTRA_TENANT_ID:      ${{ secrets.ENTRA_TENANT_ID }}
           ENTRA_CLIENT_SECRET:  ${{ secrets.ENTRA_CLIENT_SECRET }}
           MAIL_FROM:            ${{ secrets.MAIL_FROM }}
           MAIL_TO:              ${{ secrets.MAIL_TO }}
-          TEST_MODE:            ${{ github.event.inputs.test_mode || 'false' }}
         run: node scripts/run-digest.js
