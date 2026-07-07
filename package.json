@@ -2,7 +2,11 @@
   "name": "holland-stack-radar",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "engines": {
-    "node": "20.x"
+    "node": "24.x"
+  },
+  "dependencies": {
+    "@google/genai": "^1.0.0"
   }
 }
