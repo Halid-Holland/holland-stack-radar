@@ -24,22 +24,14 @@ const VALID_TAGS = [
 const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
 async function analyzeVendor(vendorName) {
-  const prompt = `Search the web for the latest updates, releases, or announcements about ${vendorName} in the past 30 days.
-Focus on what is relevant to Holland 1916, a veteran-owned manufacturing company in North Kansas City, MO that uses ${vendorName} as part of their technology stack.
+  const prompt = `Search for the single most important ${vendorName} update from the past 30 days relevant to a manufacturing company's IT team. Be brief.
 
-Return ONLY a raw JSON object — no markdown, no code fences — with this exact structure:
-{
-  "summary": "Two plain-English sentences: what changed and why it matters to Holland 1916.",
-  "tags": ["tag1", "tag2"],
-  "relevance_score": 8,
-  "action_needed": false
-}
+Reply with ONLY this JSON, no extra text:
+{"summary":"One sentence: what changed. One sentence: why it matters to IT.","tags":["tag1"],"relevance_score":7,"action_needed":false}
 
-Rules:
-- summary must be exactly two sentences
-- tags must only use values from: ${VALID_TAGS.join(', ')}
-- relevance_score is 1–10 (10 = critical to Holland 1916 operations)
-- action_needed is true only if staff must act before a deadline or risk breakage`;
+tags: pick 1-2 from: ${VALID_TAGS.join(', ')}
+relevance_score: 1-10
+action_needed: true only if action is required before a deadline`;
 
   const result = await ai.models.generateContent({
     model: 'gemini-2.0-flash',
@@ -176,7 +168,11 @@ async function sendEmail(subject, html) {
 async function main() {
   const vendorsPath = join(__dirname, '..', 'vendors.json');
   const allVendors = JSON.parse(readFileSync(vendorsPath, 'utf8'));
-  const vendors = allVendors.filter(v => v.active);
+  let vendors = allVendors.filter(v => v.active);
+  if (process.env.TEST_MODE === 'true') {
+    vendors = vendors.slice(0, 1);
+    console.log('TEST_MODE: limiting to 1 vendor');
+  }
 
   console.log(`Running digest for ${vendors.length} vendors...`);
 

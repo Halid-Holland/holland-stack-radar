@@ -3,7 +3,14 @@ name: Weekly Stack Digest
 on:
   schedule:
     - cron: '0 13 * * 1'  # Every Monday 8:00 AM CT (13:00 UTC)
-  workflow_dispatch:        # Manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Test mode — run 1 vendor only'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
 
 jobs:
   run-digest:
@@ -30,4 +37,5 @@ jobs:
           ENTRA_CLIENT_SECRET:  ${{ secrets.ENTRA_CLIENT_SECRET }}
           MAIL_FROM:            ${{ secrets.MAIL_FROM }}
           MAIL_TO:              ${{ secrets.MAIL_TO }}
+          TEST_MODE:            ${{ github.event.inputs.test_mode || 'false' }}
         run: node scripts/run-digest.js
