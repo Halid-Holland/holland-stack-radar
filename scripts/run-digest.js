@@ -34,7 +34,7 @@ relevance_score: 1-10
 action_needed: true only if action is required before a deadline`;
 
   const result = await ai.models.generateContent({
-    model: 'gemini-2.0-flash',
+    model: 'gemini-1.5-flash',
     contents: prompt,
     tools: [{ googleSearch: {} }],
   });
