@@ -198,7 +198,9 @@ async function analyzeVendorAI(vendor, timeframe) {
 }
 
 async function analyzeVendor(vendor, timeframe) {
-  if (RUN_MODE === 'mock') return analyzeVendorMock(vendor.id);
+  // 'automations' is the manual test lever for the due-automation path (see main()) -
+  // mock it too so testing scheduling logic doesn't depend on a working AI key.
+  if (RUN_MODE === 'mock' || RUN_MODE === 'automations') return analyzeVendorMock(vendor.id);
   return analyzeVendorAI(vendor, timeframe);
 }
 
