@@ -413,7 +413,7 @@ async function runDueAutomations() {
 }
 
 async function main() {
-  if (IS_SCHEDULED_RUN) {
+  if (IS_SCHEDULED_RUN || RUN_MODE === 'automations') {
     await runDueAutomations();
   } else {
     await runGlobalDigest();
