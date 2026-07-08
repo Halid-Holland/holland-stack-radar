@@ -1,8 +1,9 @@
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const LAST_RUN_PATH = join(__dirname, '..', 'last-run.json');
 
 const RUN_MODE = process.env.RUN_MODE || 'mock'; // mock | test | production
 
@@ -65,25 +66,52 @@ const MOCK_RESULTS = {
   },
 };
 
+// ─── Timeframe ───────────────────────────────────────────────────────────────
+
+function getTimeframe() {
+  if (RUN_MODE !== 'production' || !existsSync(LAST_RUN_PATH)) {
+    return '30 days';
+  }
+  const { lastRun } = JSON.parse(readFileSync(LAST_RUN_PATH, 'utf8'));
+  const days = Math.max(1, Math.round((Date.now() - new Date(lastRun).getTime()) / 86400000));
+  return `${days} day${days > 1 ? 's' : ''}`;
+}
+
+function recordRun() {
+  writeFileSync(LAST_RUN_PATH, JSON.stringify({ lastRun: new Date().toISOString() }, null, 2));
+}
+
 // ─── AI analysis ─────────────────────────────────────────────────────────────
 
 async function analyzeVendorMock(vendorId) {
   return MOCK_RESULTS[vendorId] || MOCK_RESULTS.default;
 }
 
-async function analyzeVendorAI(vendorName) {
+function buildPrompt(vendor, timeframe) {
+  const recipientGroup = vendor.recipientGroup || '';
+  const audience = recipientGroup ? `the ${recipientGroup} at Holland 1916` : 'Holland 1916';
+  const focus = (vendor.focus || '').trim();
+
+  const focusBlock = focus
+    ? `\nThe user has specifically asked you to prioritize this angle if relevant: "${focus}"\nIf there is a real, recent update matching that focus, lead the summary with it and score relevance based on how much it matters to Holland 1916.\nIf there is no recent news matching that focus, say so explicitly at the start of the summary (e.g. "No recent news on ${focus}.") and then report the single most important general ${vendor.name} update instead.\n`
+    : '';
+
+  return `Search for the most important ${vendor.name} update in the last ${timeframe} relevant to ${audience}.
+${focusBlock}
+Reply with ONLY this JSON, no extra text:
+{"summary":"One sentence: what changed. One sentence: why it matters to ${recipientGroup || 'Holland 1916'}.","tags":["tag1"],"relevance_score":7,"action_needed":false}
+
+tags: pick 1-2 from: ${VALID_TAGS.join(', ')}
+relevance_score: 1-10${focus ? ' — if a focus was specified and matched, weight relevance according to how important that specific angle is to Holland 1916' : ''}
+action_needed: true only if action is required before a deadline`;
+}
+
+async function analyzeVendorAI(vendor, timeframe) {
   // Swap this import at the top once the API key is confirmed working
   const { GoogleGenAI } = await import('@google/genai');
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-  const prompt = `Search for the single most important ${vendorName} update from the past 30 days relevant to a manufacturing company's IT team. Be brief.
-
-Reply with ONLY this JSON, no extra text:
-{"summary":"One sentence: what changed. One sentence: why it matters to IT.","tags":["tag1"],"relevance_score":7,"action_needed":false}
-
-tags: pick 1-2 from: ${VALID_TAGS.join(', ')}
-relevance_score: 1-10
-action_needed: true only if action is required before a deadline`;
+  const prompt = buildPrompt(vendor, timeframe);
 
   const result = await ai.models.generateContent({
     model: 'gemini-2.0-flash',
@@ -103,9 +131,9 @@ action_needed: true only if action is required before a deadline`;
   };
 }
 
-async function analyzeVendor(vendor) {
+async function analyzeVendor(vendor, timeframe) {
   if (RUN_MODE === 'mock') return analyzeVendorMock(vendor.id);
-  return analyzeVendorAI(vendor.name);
+  return analyzeVendorAI(vendor, timeframe);
 }
 
 // ─── Email HTML formatter ─────────────────────────────────────────────────────
@@ -235,13 +263,15 @@ async function main() {
     console.log('Test mode: limiting to 1 vendor');
   }
 
+  const timeframe = getTimeframe();
+  console.log(`Timeframe: last ${timeframe}`);
   console.log(`Running digest for ${vendors.length} vendor(s)...`);
 
   const results = [];
   for (const vendor of vendors) {
     try {
       console.log(`  Analyzing ${vendor.name}...`);
-      const result = await analyzeVendor(vendor);
+      const result = await analyzeVendor(vendor, timeframe);
       results.push({ vendor, result });
       console.log(`  ✓ ${vendor.name} — score ${result.relevance_score}`);
     } catch (err) {
@@ -258,6 +288,8 @@ async function main() {
   console.log(`\nSending digest to ${MAIL_TO}...`);
   await sendEmail(subject, html);
   console.log('Done. Digest sent.');
+
+  if (RUN_MODE === 'production') recordRun();
 }
 
 main().catch(err => {
