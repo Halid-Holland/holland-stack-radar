@@ -2,7 +2,7 @@ name: Weekly Stack Digest
 
 on:
   schedule:
-    - cron: '0 13 * * 1'  # Every Monday 8:00 AM CT (13:00 UTC)
+    - cron: '*/15 * * * *'  # Every 15 minutes - actual due-time matching added in a later step
   workflow_dispatch:
     inputs:
       run_mode:
@@ -31,7 +31,20 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # Temporary safety guard: on a scheduled run, only proceed if there's at least
+      # one saved, non-paused automation. Real due-time matching (does this automation's
+      # schedule/time actually match right now) is added in a later step - this just
+      # prevents the frequent cron from firing a real production digest every 15 minutes
+      # while automations.json is empty or nothing is actively scheduled.
+      - name: Check for active automations
+        id: check
+        if: github.event_name == 'schedule'
+        run: |
+          HAS_ACTIVE=$(node -e "const a=require('./automations.json');console.log(a.some(x=>!x.paused)?'true':'false')")
+          echo "has_active=$HAS_ACTIVE" >> "$GITHUB_OUTPUT"
+
       - name: Run digest
+        if: github.event_name == 'workflow_dispatch' || steps.check.outputs.has_active == 'true'
         env:
           RUN_MODE:             ${{ github.event.inputs.run_mode || 'production' }}
           GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
@@ -43,7 +56,7 @@ jobs:
         run: node scripts/run-digest.js
 
       - name: Commit last-run timestamp
-        if: ${{ (github.event.inputs.run_mode || 'production') == 'production' }}
+        if: ${{ (github.event.inputs.run_mode || 'production') == 'production' && (github.event_name == 'workflow_dispatch' || steps.check.outputs.has_active == 'true') }}
         run: |
           if [ -n "$(git status --porcelain last-run.json)" ]; then
             git config user.name "stack-radar-bot"
