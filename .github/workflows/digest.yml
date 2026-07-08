@@ -2,7 +2,7 @@ name: Weekly Stack Digest
 
 on:
   schedule:
-    - cron: '*/15 * * * *'  # Every 15 minutes - actual due-time matching added in a later step
+    - cron: '*/15 * * * *'  # Checks every 15 min for automations due right now (run-digest.js does the actual matching)
   workflow_dispatch:
     inputs:
       run_mode:
@@ -31,11 +31,10 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # Temporary safety guard: on a scheduled run, only proceed if there's at least
-      # one saved, non-paused automation. Real due-time matching (does this automation's
-      # schedule/time actually match right now) is added in a later step - this just
-      # prevents the frequent cron from firing a real production digest every 15 minutes
-      # while automations.json is empty or nothing is actively scheduled.
+      # Coarse pre-filter: on a scheduled run, skip entirely if there isn't even one
+      # non-paused automation saved. The real due-time (day/time) matching happens
+      # inside run-digest.js - this just avoids running node at all when there's
+      # nothing to possibly check.
       - name: Check for active automations
         id: check
         if: github.event_name == 'schedule'
@@ -44,6 +43,7 @@ jobs:
           echo "has_active=$HAS_ACTIVE" >> "$GITHUB_OUTPUT"
 
       - name: Run digest
+        id: rundigest
         if: github.event_name == 'workflow_dispatch' || steps.check.outputs.has_active == 'true'
         env:
           RUN_MODE:             ${{ github.event.inputs.run_mode || 'production' }}
@@ -55,13 +55,20 @@ jobs:
           MAIL_TO:              ${{ secrets.MAIL_TO }}
         run: node scripts/run-digest.js
 
-      - name: Commit last-run timestamp
-        if: ${{ (github.event.inputs.run_mode || 'production') == 'production' && (github.event_name == 'workflow_dispatch' || steps.check.outputs.has_active == 'true') }}
+      - name: Commit updated schedule state
+        if: steps.rundigest.outcome == 'success'
         run: |
-          if [ -n "$(git status --porcelain last-run.json)" ]; then
+          CHANGED=""
+          if [ -f last-run.json ] && [ -n "$(git status --porcelain last-run.json)" ]; then
+            CHANGED="$CHANGED last-run.json"
+          fi
+          if [ -n "$(git status --porcelain automations.json)" ]; then
+            CHANGED="$CHANGED automations.json"
+          fi
+          if [ -n "$CHANGED" ]; then
             git config user.name "stack-radar-bot"
             git config user.email "actions@github.com"
-            git add last-run.json
-            git commit -m "Update last-run timestamp [skip ci]"
+            git add $CHANGED
+            git commit -m "Update digest run state [skip ci]"
             git push
           fi

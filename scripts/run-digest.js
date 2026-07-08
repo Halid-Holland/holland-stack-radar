@@ -4,6 +4,9 @@ import { dirname, join } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const LAST_RUN_PATH = join(__dirname, '..', 'last-run.json');
+const AUTOMATIONS_PATH = join(__dirname, '..', 'automations.json');
+const VENDORS_PATH = join(__dirname, '..', 'vendors.json');
+const IS_SCHEDULED_RUN = process.env.GITHUB_EVENT_NAME === 'schedule';
 
 const RUN_MODE = process.env.RUN_MODE || 'mock'; // mock | test | production
 
@@ -79,6 +82,69 @@ function getTimeframe() {
 
 function recordRun() {
   writeFileSync(LAST_RUN_PATH, JSON.stringify({ lastRun: new Date().toISOString() }, null, 2));
+}
+
+// ─── Automation scheduling ─────────────────────────────────────────────────────
+
+const CT_ZONE = 'America/Chicago';
+
+function ctParts(date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: CT_ZONE, hour12: false, year: 'numeric', month: '2-digit',
+    day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short',
+  }).formatToParts(date);
+  const get = type => parts.find(p => p.type === type).value;
+  return {
+    year: Number(get('year')), month: Number(get('month')), day: Number(get('day')),
+    hour: Number(get('hour')) % 24, minute: Number(get('minute')), weekday: get('weekday'),
+  };
+}
+
+function bucketOf(hour, minute) {
+  return hour * 4 + Math.floor(minute / 15);
+}
+
+function daysInMonth(year, month) {
+  return new Date(year, month, 0).getDate();
+}
+
+function isDue(automation, now) {
+  if (automation.paused) return false;
+
+  const cur = ctParts(now);
+  const [tH, tM] = (automation.time || '09:00').split(':').map(Number);
+  if (bucketOf(cur.hour, cur.minute) !== bucketOf(tH, tM)) return false;
+
+  const created = new Date(automation.createdAt);
+  if (isNaN(created.getTime())) return false;
+  const anchorWeekday = created.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
+  const anchorDay = created.getUTCDate();
+  const anchorMonth = created.getUTCMonth() + 1;
+
+  const effectiveAnchorDay = Math.min(anchorDay, daysInMonth(cur.year, anchorMonth));
+
+  switch (automation.schedule) {
+    case 'Daily':
+      return true;
+    case 'Weekly':
+      return cur.weekday === anchorWeekday;
+    case 'Monthly':
+      return cur.day === Math.min(anchorDay, daysInMonth(cur.year, cur.month));
+    case 'Quarterly': {
+      const monthsSinceAnchor = (cur.month - anchorMonth + 12) % 12;
+      return monthsSinceAnchor % 3 === 0 && cur.day === effectiveAnchorDay;
+    }
+    default:
+      return false;
+  }
+}
+
+function alreadySentThisBucket(automation, now) {
+  if (!automation.lastSent) return false;
+  const last = ctParts(new Date(automation.lastSent));
+  const cur = ctParts(now);
+  return last.year === cur.year && last.month === cur.month && last.day === cur.day
+    && bucketOf(last.hour, last.minute) === bucketOf(cur.hour, cur.minute);
 }
 
 // ─── AI analysis ─────────────────────────────────────────────────────────────
@@ -206,7 +272,7 @@ function buildEmailHTML(results, mode) {
 
 // ─── Microsoft Graph email sender ─────────────────────────────────────────────
 
-async function sendEmail(subject, html) {
+async function sendEmail(subject, html, recipients) {
   const tokenRes = await fetch(
     `https://login.microsoftonline.com/${ENTRA_TENANT_ID}/oauth2/v2.0/token`,
     {
@@ -236,7 +302,7 @@ async function sendEmail(subject, html) {
         message: {
           subject,
           body: { contentType: 'HTML', content: html },
-          toRecipients: [{ emailAddress: { address: MAIL_TO } }],
+          toRecipients: recipients.map(address => ({ emailAddress: { address } })),
         },
         saveToSentItems: false,
       }),
@@ -249,24 +315,9 @@ async function sendEmail(subject, html) {
   }
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+// ─── Shared vendor-analysis loop ──────────────────────────────────────────────
 
-async function main() {
-  console.log(`RUN_MODE: ${RUN_MODE}`);
-
-  const vendorsPath = join(__dirname, '..', 'vendors.json');
-  const allVendors = JSON.parse(readFileSync(vendorsPath, 'utf8'));
-  let vendors = allVendors.filter(v => v.active);
-
-  if (RUN_MODE === 'test') {
-    vendors = vendors.slice(0, 1);
-    console.log('Test mode: limiting to 1 vendor');
-  }
-
-  const timeframe = getTimeframe();
-  console.log(`Timeframe: last ${timeframe}`);
-  console.log(`Running digest for ${vendors.length} vendor(s)...`);
-
+async function analyzeVendors(vendors, timeframe) {
   const results = [];
   for (const vendor of vendors) {
     try {
@@ -278,6 +329,27 @@ async function main() {
       console.error(`  ✗ ${vendor.name} failed: ${err.message}`);
     }
   }
+  return results;
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
+async function runGlobalDigest() {
+  console.log(`RUN_MODE: ${RUN_MODE}`);
+
+  const allVendors = JSON.parse(readFileSync(VENDORS_PATH, 'utf8'));
+  let vendors = allVendors.filter(v => v.active);
+
+  if (RUN_MODE === 'test') {
+    vendors = vendors.slice(0, 1);
+    console.log('Test mode: limiting to 1 vendor');
+  }
+
+  const timeframe = getTimeframe();
+  console.log(`Timeframe: last ${timeframe}`);
+  console.log(`Running digest for ${vendors.length} vendor(s)...`);
+
+  const results = await analyzeVendors(vendors, timeframe);
 
   if (results.length === 0) {
     console.error('No results — aborting, no email sent.');
@@ -286,10 +358,66 @@ async function main() {
 
   const { html, subject } = buildEmailHTML(results, RUN_MODE);
   console.log(`\nSending digest to ${MAIL_TO}...`);
-  await sendEmail(subject, html);
+  await sendEmail(subject, html, [MAIL_TO]);
   console.log('Done. Digest sent.');
 
   if (RUN_MODE === 'production') recordRun();
+}
+
+async function runDueAutomations() {
+  const now = new Date();
+  const allVendors = JSON.parse(readFileSync(VENDORS_PATH, 'utf8'));
+  const automations = JSON.parse(readFileSync(AUTOMATIONS_PATH, 'utf8'));
+
+  const due = automations.filter(a => isDue(a, now) && !alreadySentThisBucket(a, now));
+
+  if (due.length === 0) {
+    console.log('No automations due right now.');
+    return;
+  }
+
+  console.log(`${due.length} automation(s) due.`);
+  let changed = false;
+
+  for (const automation of due) {
+    console.log(`\nRunning automation "${automation.name}" (${automation.schedule} @ ${automation.time})...`);
+    const vendors = allVendors.filter(v => automation.tools.includes(v.id));
+
+    if (vendors.length === 0) {
+      console.log('  No vendors configured for this automation, skipping.');
+      continue;
+    }
+
+    const results = await analyzeVendors(vendors, '30 days');
+    if (results.length === 0) {
+      console.log('  No results, skipping send.');
+      continue;
+    }
+
+    const recipients = automation.recipients && automation.recipients.length > 0
+      ? automation.recipients
+      : [MAIL_TO];
+
+    const { html, subject } = buildEmailHTML(results, 'production');
+    await sendEmail(subject, html, recipients);
+    console.log(`  Sent to ${recipients.join(', ')}`);
+
+    automation.lastSent = now.toISOString();
+    changed = true;
+  }
+
+  if (changed) {
+    writeFileSync(AUTOMATIONS_PATH, JSON.stringify(automations, null, 2));
+    console.log('\nUpdated automations.json with lastSent timestamps.');
+  }
+}
+
+async function main() {
+  if (IS_SCHEDULED_RUN) {
+    await runDueAutomations();
+  } else {
+    await runGlobalDigest();
+  }
 }
 
 main().catch(err => {
