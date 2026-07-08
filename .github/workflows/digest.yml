@@ -1,5 +1,8 @@
 name: Weekly Stack Digest
 
+permissions:
+  contents: write
+
 on:
   schedule:
     - cron: '*/15 * * * *'  # Checks every 15 min for automations due right now (run-digest.js does the actual matching)
