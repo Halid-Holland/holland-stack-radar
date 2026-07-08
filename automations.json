@@ -1,14 +1,1 @@
-[
-  {
-    "id": 123,
-    "name": "Test Automation",
-    "schedule": "Daily",
-    "time": "09:00",
-    "tools": [
-      "salesforce"
-    ],
-    "recipients": [],
-    "createdAt": "Jul 8, 2026",
-    "paused": false
-  }
-]
+[]
