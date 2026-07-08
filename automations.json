@@ -1,1 +1,14 @@
-[]
+[
+  {
+    "id": 999,
+    "name": "E2E Test Automation",
+    "schedule": "Daily",
+    "time": "12:30",
+    "tools": [
+      "salesforce"
+    ],
+    "recipients": [],
+    "createdAt": "Jul 8, 2026",
+    "paused": false
+  }
+]
