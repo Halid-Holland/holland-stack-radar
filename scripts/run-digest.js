@@ -24,7 +24,7 @@ const VALID_TAGS = [
 
 // Static company context so the AI can judge relevance concretely instead of
 // reasoning about a generic "Holland 1916" name it has no grounding for.
-const HOLLAND_CONTEXT = `Holland 1916 is a veteran-owned manufacturing holding company (North Kansas City, MO) with three operating companies:
+const HOLLAND_CONTEXT = `Holland 1916 is a manufacturing holding company (North Kansas City, MO) with three operating companies:
 - Holland Nameplate Products (HNP): industrial nameplates, labels, control panels, enclosures
 - Holland Interface Solutions (HIS): membrane switches, touchscreens, keypads, graphic overlays
 - Holland RFID (HRFID): ruggedized RFID tags/readers for harsh environments (oil & gas, mining, rigging)
