@@ -29,7 +29,17 @@ const HOLLAND_CONTEXT = `Holland 1916 is a manufacturing holding company (North 
 - Holland Interface Solutions (HIS): membrane switches, touchscreens, keypads, graphic overlays
 - Holland RFID (HRFID): ruggedized RFID tags/readers for harsh environments (oil & gas, mining, rigging)
 
-They run on the Holland Operating System (HOS) — a custom Salesforce-based platform covering sales through manufacturing to shipping. Tech stack includes Salesforce, Microsoft 365, Atlassian, Cloudflare, and AccountingSeed. They operate ISO 9001 / ISO 13485 quality environments.`;
+The Holland Operating System (HOS) is their custom Salesforce-based platform (built with Apex, Flows, and Skuid) that runs the full order lifecycle — sales quoting, order entry, manufacturing execution, and shipping — in one system. Because HOS is built directly on Salesforce, any Salesforce platform change (API deprecations, Flow/Apex limits, UI changes) can directly affect HOS and deserves extra scrutiny.
+
+Tech stack includes Salesforce, Microsoft 365, Atlassian, Cloudflare, and AccountingSeed. They operate ISO 9001 / ISO 13485 quality environments.`;
+
+// Placeholder for future recipient-group interest profiles (e.g. "IT Team cares
+// about security/integrations", "Finance cares about billing/compliance").
+// Returns '' today since recipient groups aren't built yet - this function exists
+// so wiring that in later is a one-line change inside here, not a prompt redesign.
+function buildGroupContextBlock(vendor) {
+  return '';
+}
 
 // ─── Mock data ───────────────────────────────────────────────────────────────
 // `sources` here are stale/illustrative placeholder links (not live-fetched),
@@ -187,8 +197,10 @@ function buildPrompt(vendor, timeframe) {
     ? `\nThe user has specifically asked you to prioritize this angle if relevant: "${focus}"\nIf there is a real, recent update matching that focus, lead the summary with it and score relevance based on how much it matters to Holland 1916.\nIf there is no recent news matching that focus, say so explicitly at the start of the summary (e.g. "No recent news on ${focus}.") and then report the single most important general ${vendor.name} update instead.\n`
     : '';
 
-  return `${HOLLAND_CONTEXT}
+  const groupContextBlock = buildGroupContextBlock(vendor);
 
+  return `${HOLLAND_CONTEXT}
+${groupContextBlock}
 Search for the most important ${vendor.name} update in the last ${timeframe} relevant to ${audience}.
 ${focusBlock}
 Reply with ONLY this JSON, no extra text:
