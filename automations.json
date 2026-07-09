@@ -1,1 +1,23 @@
-[]
+[
+  {
+    "id": 1783533212304,
+    "name": "testnews",
+    "schedule": "Daily",
+    "time": "09:00",
+    "tools": [
+      "salesforce",
+      "atlassian",
+      "cloudflare",
+      "accountingseed",
+      "openai",
+      "anthropic",
+      "github",
+      "gearset"
+    ],
+    "recipients": [
+      "habdulsalam@holland1916.com"
+    ],
+    "createdAt": "Jul 8, 2026",
+    "paused": false
+  }
+]
