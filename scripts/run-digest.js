@@ -319,6 +319,16 @@ async function sendEmail(subject, html, recipients) {
 
 // ─── Shared vendor-analysis loop ──────────────────────────────────────────────
 
+function placeholderResult(vendor) {
+  return {
+    summary: `AI analysis is temporarily unavailable for ${vendor.name}. This is stale placeholder text — no real update information is being shown right now.`,
+    tags: ['IT-admin'],
+    relevance_score: 1,
+    action_needed: false,
+    placeholder: true,
+  };
+}
+
 async function analyzeVendors(vendors, timeframe) {
   const results = [];
   for (const vendor of vendors) {
@@ -328,7 +338,8 @@ async function analyzeVendors(vendors, timeframe) {
       results.push({ vendor, result });
       console.log(`  ✓ ${vendor.name} — score ${result.relevance_score}`);
     } catch (err) {
-      console.error(`  ✗ ${vendor.name} failed: ${err.message}`);
+      console.error(`  ✗ ${vendor.name} failed: ${err.message} — using placeholder text instead`);
+      results.push({ vendor, result: placeholderResult(vendor) });
     }
   }
   return results;
