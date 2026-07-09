@@ -108,12 +108,20 @@ function daysInMonth(year, month) {
   return new Date(year, month, 0).getDate();
 }
 
+// isDue is intentionally a "has the target time passed today (and not yet sent)"
+// check rather than an exact 15-minute-bucket match. GitHub Actions can silently
+// delay or skip ticks on schedules more frequent than hourly (documented behavior
+// under load), so requiring an exact window match means a single skipped tick
+// causes a missed send for the whole day. This version catches up on whichever
+// tick runs next, as long as it's still the same qualifying day.
 function isDue(automation, now) {
   if (automation.paused) return false;
 
   const cur = ctParts(now);
   const [tH, tM] = (automation.time || '09:00').split(':').map(Number);
-  if (bucketOf(cur.hour, cur.minute) !== bucketOf(tH, tM)) return false;
+  const curMinutes = cur.hour * 60 + cur.minute;
+  const targetMinutes = tH * 60 + tM;
+  if (curMinutes < targetMinutes) return false; // target time hasn't happened yet today
 
   const created = new Date(automation.createdAt);
   if (isNaN(created.getTime())) return false;
@@ -139,12 +147,11 @@ function isDue(automation, now) {
   }
 }
 
-function alreadySentThisBucket(automation, now) {
+function alreadySentToday(automation, now) {
   if (!automation.lastSent) return false;
   const last = ctParts(new Date(automation.lastSent));
   const cur = ctParts(now);
-  return last.year === cur.year && last.month === cur.month && last.day === cur.day
-    && bucketOf(last.hour, last.minute) === bucketOf(cur.hour, cur.minute);
+  return last.year === cur.year && last.month === cur.month && last.day === cur.day;
 }
 
 // ─── AI analysis ─────────────────────────────────────────────────────────────
@@ -382,7 +389,7 @@ async function runDueAutomations() {
   const allVendors = JSON.parse(readFileSync(VENDORS_PATH, 'utf8'));
   const automations = JSON.parse(readFileSync(AUTOMATIONS_PATH, 'utf8'));
 
-  const due = automations.filter(a => isDue(a, now) && !alreadySentThisBucket(a, now));
+  const due = automations.filter(a => isDue(a, now) && !alreadySentToday(a, now));
 
   if (due.length === 0) {
     console.log('No automations due right now.');
