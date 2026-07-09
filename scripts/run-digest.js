@@ -22,7 +22,18 @@ const VALID_TAGS = [
   'integration','HOS','AI',
 ];
 
+// Static company context so the AI can judge relevance concretely instead of
+// reasoning about a generic "Holland 1916" name it has no grounding for.
+const HOLLAND_CONTEXT = `Holland 1916 is a veteran-owned manufacturing holding company (North Kansas City, MO) with three operating companies:
+- Holland Nameplate Products (HNP): industrial nameplates, labels, control panels, enclosures
+- Holland Interface Solutions (HIS): membrane switches, touchscreens, keypads, graphic overlays
+- Holland RFID (HRFID): ruggedized RFID tags/readers for harsh environments (oil & gas, mining, rigging)
+
+They run on the Holland Operating System (HOS) — a custom Salesforce-based platform covering sales through manufacturing to shipping. Tech stack includes Salesforce, Microsoft 365, Atlassian, Cloudflare, and AccountingSeed. They operate ISO 9001 / ISO 13485 quality environments.`;
+
 // ─── Mock data ───────────────────────────────────────────────────────────────
+// `sources` here are stale/illustrative placeholder links (not live-fetched),
+// matching the stale placeholder summary text — same idea, just for the link too.
 
 const MOCK_RESULTS = {
   default: {
@@ -30,42 +41,49 @@ const MOCK_RESULTS = {
     tags: ['IT-admin', 'new-feature'],
     relevance_score: 6,
     action_needed: false,
+    sources: [],
   },
   salesforce: {
     summary: "Salesforce Spring '25 adds parallel stage execution to Flow Orchestration and raises the Apex CPU limit for async processes by 50%. These changes directly improve HOS workflow reliability and open broader automation options.",
     tags: ['automation', 'HOS', 'new-feature'],
     relevance_score: 9,
     action_needed: false,
+    sources: ['https://help.salesforce.com/s/articleView?id=release-notes.salesforce_release_notes.htm'],
   },
   microsoft365: {
     summary: 'Microsoft is removing Basic Authentication from Exchange Online on September 1, 2026 — any integrations still using basic auth will stop working. IT must audit and migrate affected connectors before the deadline.',
     tags: ['security', 'IT-admin', 'upgrade-required'],
     relevance_score: 10,
     action_needed: true,
+    sources: ['https://learn.microsoft.com/en-us/exchange/clients-and-mobile-in-exchange-online/deprecation-of-basic-authentication-exchange-online'],
   },
   atlassian: {
     summary: 'Atlassian released Jira Product Discovery updates and improved Confluence AI search. No breaking changes — standard update cadence.',
     tags: ['new-feature', 'AI'],
     relevance_score: 5,
     action_needed: false,
+    sources: ['https://www.atlassian.com/software/jira/product-discovery/release-notes'],
   },
   cloudflare: {
     summary: "Cloudflare expanded its AI Gateway and rolled out new DDoS mitigation rules. Holland 1916's DNS and web properties continue to be protected with no action required.",
     tags: ['security', 'performance'],
     relevance_score: 6,
     action_needed: false,
+    sources: ['https://blog.cloudflare.com/'],
   },
   anthropic: {
     summary: 'Anthropic released Claude 4 with significantly improved reasoning and tool-use capabilities. Relevant to any Holland 1916 AI automation initiatives currently using Claude.',
     tags: ['AI', 'new-feature'],
     relevance_score: 7,
     action_needed: false,
+    sources: ['https://www.anthropic.com/news'],
   },
   github: {
     summary: 'GitHub Copilot now supports multi-file edits and added new security scanning features to Actions. Holland 1916 repos will benefit from improved automated vulnerability detection.',
     tags: ['security', 'automation', 'new-feature'],
     relevance_score: 7,
     action_needed: false,
+    sources: ['https://github.blog/changelog/'],
   },
 };
 
@@ -169,14 +187,17 @@ function buildPrompt(vendor, timeframe) {
     ? `\nThe user has specifically asked you to prioritize this angle if relevant: "${focus}"\nIf there is a real, recent update matching that focus, lead the summary with it and score relevance based on how much it matters to Holland 1916.\nIf there is no recent news matching that focus, say so explicitly at the start of the summary (e.g. "No recent news on ${focus}.") and then report the single most important general ${vendor.name} update instead.\n`
     : '';
 
-  return `Search for the most important ${vendor.name} update in the last ${timeframe} relevant to ${audience}.
+  return `${HOLLAND_CONTEXT}
+
+Search for the most important ${vendor.name} update in the last ${timeframe} relevant to ${audience}.
 ${focusBlock}
 Reply with ONLY this JSON, no extra text:
-{"summary":"One sentence: what changed. One sentence: why it matters to ${recipientGroup || 'Holland 1916'}.","tags":["tag1"],"relevance_score":7,"action_needed":false}
+{"summary":"One sentence: what changed. One sentence: why it matters to ${recipientGroup || 'Holland 1916'}.","tags":["tag1"],"relevance_score":7,"action_needed":false,"sources":["https://..."]}
 
 tags: pick 1-2 from: ${VALID_TAGS.join(', ')}
 relevance_score: 1-10${focus ? ' — if a focus was specified and matched, weight relevance according to how important that specific angle is to Holland 1916' : ''}
-action_needed: true only if action is required before a deadline`;
+action_needed: true only if action is required before a deadline
+sources: 1-3 URLs of the actual pages you used via web search to find this update. Only include URLs you are confident are real — never fabricate one. If you have no real source URL, return an empty array.`;
 }
 
 async function analyzeVendorAI(vendor, timeframe) {
@@ -201,6 +222,9 @@ async function analyzeVendorAI(vendor, timeframe) {
     tags: Array.isArray(parsed.tags) ? parsed.tags.filter(t => VALID_TAGS.includes(t)) : [],
     relevance_score: Math.min(10, Math.max(1, Number(parsed.relevance_score) || 5)),
     action_needed: Boolean(parsed.action_needed),
+    sources: Array.isArray(parsed.sources)
+      ? parsed.sources.filter(u => typeof u === 'string' && /^https?:\/\//i.test(u)).slice(0, 3)
+      : [],
   };
 }
 
@@ -240,6 +264,13 @@ function buildEmailHTML(results, mode) {
       `<span style="display:inline-block;background:#F3F4F6;color:#555;font-size:10px;font-weight:600;padding:2px 7px;border-radius:4px;margin:2px 3px 2px 0;text-transform:uppercase;letter-spacing:0.04em;">${tag}</span>`
     ).join('');
 
+    const sources = Array.isArray(result.sources) ? result.sources : [];
+    const sourceLinks = sources.length
+      ? `<div style="margin-top:8px;">${sources.map((url, i) =>
+          `<a href="${url.replace(/"/g, '&quot;')}" style="font-size:11px;color:#0070BA;text-decoration:none;margin-right:12px;">Source${sources.length > 1 ? ` ${i + 1}` : ''} &rarr;</a>`
+        ).join('')}</div>`
+      : '';
+
     return `
     <div style="border:1px solid ${result.action_needed ? '#FECACA' : '#E5E7EB'};border-radius:8px;padding:16px;margin-bottom:12px;">
       <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px;">
@@ -255,6 +286,7 @@ function buildEmailHTML(results, mode) {
       </table>
       <p style="margin:0 0 10px;font-size:13px;color:#333;line-height:1.55;">${result.summary}</p>
       <div>${tagPills}</div>
+      ${sourceLinks}
     </div>`;
   }).join('');
 
@@ -333,6 +365,7 @@ function placeholderResult(vendor) {
     relevance_score: 1,
     action_needed: false,
     placeholder: true,
+    sources: [],
   };
 }
 
