@@ -18,9 +18,12 @@ async function getFile(token) {
 // ownerToken is a per-automation secret assigned at creation and handed back
 // to the creating browser once (stored in localStorage there). It's the only
 // thing that proves "this browser may edit/delete this automation" - there's
-// no real user accounts, so never let it leave the server in a GET response.
+// no real user accounts, so never let the actual value leave the server in a
+// GET response. hasOwner (a plain boolean) is still exposed so clients can
+// tell "unclaimed legacy automation" apart from "owned by someone else"
+// without learning the secret itself.
 function redact(automations) {
-  return automations.map(({ ownerToken, ...rest }) => rest);
+  return automations.map(({ ownerToken, ...rest }) => ({ ...rest, hasOwner: !!ownerToken }));
 }
 
 export default async function handler(req, res) {
