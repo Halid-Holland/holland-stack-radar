@@ -19,6 +19,8 @@
     ],
     "createdAt": "Jul 8, 2026",
     "paused": false,
-    "lastSent": "2026-07-14T14:11:33.532Z"
+    "lastSent": "2026-07-14T14:11:33.532Z",
+    "hasOwner": false,
+    "ownerToken": "f454efaa-7f2a-4cb5-a1f4-222894268c09"
   }
 ]
