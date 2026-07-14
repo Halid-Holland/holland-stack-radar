@@ -481,25 +481,41 @@ async function runDueAutomations() {
   const sharedResults = await analyzeVendors(neededVendors, '30 days');
   const resultByVendorId = new Map(sharedResults.map(r => [r.vendor.id, r]));
 
+  // Each automation is wrapped in its own try/catch so one failure (bad Graph
+  // token, no vendors configured, etc.) can't kill the whole batch and skip
+  // writing back the automations that succeeded alongside it. lastStatus/
+  // lastError give the UI something concrete to show instead of a send just
+  // silently not happening with no visible reason.
   const changedFlags = await mapWithConcurrency(due, AUTOMATION_CONCURRENCY, async automation => {
     console.log(`\n[${automation.name}] Running (${automation.schedule} @ ${automation.time})...`);
-    const results = automation.tools.map(id => resultByVendorId.get(id)).filter(Boolean);
+    try {
+      const results = automation.tools.map(id => resultByVendorId.get(id)).filter(Boolean);
 
-    if (results.length === 0) {
-      console.log(`  [${automation.name}] No vendors configured, skipping.`);
-      return false;
+      if (results.length === 0) {
+        console.log(`  [${automation.name}] No vendors configured, skipping.`);
+        automation.lastStatus = 'failed';
+        automation.lastError = 'No vendors configured for this automation.';
+        return true;
+      }
+
+      const recipients = automation.recipients && automation.recipients.length > 0
+        ? automation.recipients
+        : [MAIL_TO];
+
+      const { html, subject } = buildEmailHTML(results, 'production');
+      await sendEmail(subject, html, recipients);
+      console.log(`  [${automation.name}] Sent to ${recipients.join(', ')}`);
+
+      automation.lastSent = now.toISOString();
+      automation.lastStatus = 'success';
+      automation.lastError = null;
+      return true;
+    } catch (err) {
+      console.error(`  [${automation.name}] Failed: ${err.message}`);
+      automation.lastStatus = 'failed';
+      automation.lastError = err.message;
+      return true;
     }
-
-    const recipients = automation.recipients && automation.recipients.length > 0
-      ? automation.recipients
-      : [MAIL_TO];
-
-    const { html, subject } = buildEmailHTML(results, 'production');
-    await sendEmail(subject, html, recipients);
-    console.log(`  [${automation.name}] Sent to ${recipients.join(', ')}`);
-
-    automation.lastSent = now.toISOString();
-    return true;
   });
 
   if (changedFlags.some(Boolean)) {

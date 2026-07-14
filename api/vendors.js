@@ -30,10 +30,33 @@ export default async function handler(req, res) {
 
   if (req.method === 'POST') {
     try {
-      const vendors = req.body;
-      if (!Array.isArray(vendors)) return res.status(400).json({ error: 'Expected array' });
+      // A single vendor's fields, not the whole array. Two browsers editing
+      // different vendors at the same time used to clobber each other (last
+      // whole-array write wins); patching just the one vendor id this call
+      // touches - merged into whatever's currently stored - removes that risk
+      // entirely instead of merely detecting it.
+      const patch = req.body;
+      if (!patch || typeof patch.id !== 'string') {
+        return res.status(400).json({ error: 'Expected {id, ...fields}' });
+      }
 
       const file = await getFile(token);
+      const vendors = JSON.parse(Buffer.from(file.content, 'base64').toString('utf8'));
+
+      const idx = vendors.findIndex(v => v.id === patch.id);
+      if (idx === -1) {
+        vendors.push({
+          id: patch.id,
+          name: patch.name || patch.id,
+          color: patch.color || '#555',
+          active: !!patch.active,
+          focus: patch.focus || '',
+          recipientGroup: patch.recipientGroup || '',
+        });
+      } else {
+        vendors[idx] = { ...vendors[idx], ...patch };
+      }
+
       const content = Buffer.from(JSON.stringify(vendors, null, 2)).toString('base64');
 
       const putRes = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/contents/${FILE}`, {
@@ -44,7 +67,7 @@ export default async function handler(req, res) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          message: 'Update vendor selection',
+          message: `Update vendor: ${patch.id}`,
           content,
           sha: file.sha,
         }),
