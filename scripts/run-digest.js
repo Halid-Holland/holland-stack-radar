@@ -10,6 +10,13 @@ const IS_SCHEDULED_RUN = process.env.GITHUB_EVENT_NAME === 'schedule';
 
 const RUN_MODE = process.env.RUN_MODE || 'mock'; // mock | test | production
 
+// Caps on how many AI analyses / automations run at once. Concurrency instead
+// of dead-sequential processing is what keeps one job from ballooning in
+// runtime as automations/vendors pile up (see isDue's catch-up design) — but
+// still capped so a big pileup doesn't blow through AI/Graph rate limits.
+const VENDOR_CONCURRENCY = 4;
+const AUTOMATION_CONCURRENCY = 3;
+
 const ENTRA_CLIENT_ID     = process.env.ENTRA_CLIENT_ID;
 const ENTRA_TENANT_ID     = process.env.ENTRA_TENANT_ID;
 const ENTRA_CLIENT_SECRET = process.env.ENTRA_CLIENT_SECRET;
@@ -381,20 +388,36 @@ function placeholderResult(vendor) {
   };
 }
 
-async function analyzeVendors(vendors, timeframe) {
-  const results = [];
-  for (const vendor of vendors) {
-    try {
-      console.log(`  Analyzing ${vendor.name}...`);
-      const result = await analyzeVendor(vendor, timeframe);
-      results.push({ vendor, result });
-      console.log(`  ✓ ${vendor.name} — score ${result.relevance_score}`);
-    } catch (err) {
-      console.error(`  ✗ ${vendor.name} failed: ${err.message} — using placeholder text instead`);
-      results.push({ vendor, result: placeholderResult(vendor) });
+// Runs `items` through `fn` with at most `limit` in flight at once, preserving
+// output order. This is what lets several vendors/automations be analyzed at
+// the same time instead of one at a time, capped so we don't blow through
+// AI/Graph rate limits when a lot of work piles up in a single tick.
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
     }
   }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return results;
+}
+
+async function analyzeVendors(vendors, timeframe, label = '') {
+  const prefix = label ? `[${label}] ` : '';
+  return mapWithConcurrency(vendors, VENDOR_CONCURRENCY, async vendor => {
+    try {
+      console.log(`  ${prefix}Analyzing ${vendor.name}...`);
+      const result = await analyzeVendor(vendor, timeframe);
+      console.log(`  ${prefix}✓ ${vendor.name} — score ${result.relevance_score}`);
+      return { vendor, result };
+    } catch (err) {
+      console.error(`  ${prefix}✗ ${vendor.name} failed: ${err.message} — using placeholder text instead`);
+      return { vendor, result: placeholderResult(vendor) };
+    }
+  });
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -442,21 +465,29 @@ async function runDueAutomations() {
   }
 
   console.log(`${due.length} automation(s) due.`);
-  let changed = false;
 
+  // Union of every vendor any due automation needs. A vendor object is the
+  // same regardless of which automation references it (focus/recipientGroup
+  // live on the vendor, not the automation), so if several automations share
+  // a vendor (e.g. everyone tracks Salesforce), analyze it once per run
+  // instead of once per automation.
+  const neededVendorIds = new Set();
   for (const automation of due) {
-    console.log(`\nRunning automation "${automation.name}" (${automation.schedule} @ ${automation.time})...`);
-    const vendors = allVendors.filter(v => automation.tools.includes(v.id));
+    for (const id of automation.tools) neededVendorIds.add(id);
+  }
+  const neededVendors = allVendors.filter(v => neededVendorIds.has(v.id));
 
-    if (vendors.length === 0) {
-      console.log('  No vendors configured for this automation, skipping.');
-      continue;
-    }
+  console.log(`Analyzing ${neededVendors.length} unique vendor(s) across ${due.length} automation(s)...`);
+  const sharedResults = await analyzeVendors(neededVendors, '30 days');
+  const resultByVendorId = new Map(sharedResults.map(r => [r.vendor.id, r]));
 
-    const results = await analyzeVendors(vendors, '30 days');
+  const changedFlags = await mapWithConcurrency(due, AUTOMATION_CONCURRENCY, async automation => {
+    console.log(`\n[${automation.name}] Running (${automation.schedule} @ ${automation.time})...`);
+    const results = automation.tools.map(id => resultByVendorId.get(id)).filter(Boolean);
+
     if (results.length === 0) {
-      console.log('  No results, skipping send.');
-      continue;
+      console.log(`  [${automation.name}] No vendors configured, skipping.`);
+      return false;
     }
 
     const recipients = automation.recipients && automation.recipients.length > 0
@@ -465,13 +496,13 @@ async function runDueAutomations() {
 
     const { html, subject } = buildEmailHTML(results, 'production');
     await sendEmail(subject, html, recipients);
-    console.log(`  Sent to ${recipients.join(', ')}`);
+    console.log(`  [${automation.name}] Sent to ${recipients.join(', ')}`);
 
     automation.lastSent = now.toISOString();
-    changed = true;
-  }
+    return true;
+  });
 
-  if (changed) {
+  if (changedFlags.some(Boolean)) {
     writeFileSync(AUTOMATIONS_PATH, JSON.stringify(automations, null, 2));
     console.log('\nUpdated automations.json with lastSent timestamps.');
   }

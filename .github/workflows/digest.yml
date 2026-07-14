@@ -32,19 +32,21 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
-        run: npm install
-
       # Coarse pre-filter: on a scheduled run, skip entirely if there isn't even one
       # non-paused automation saved. The real due-time (day/time) matching happens
-      # inside run-digest.js - this just avoids running node at all when there's
-      # nothing to possibly check.
+      # inside run-digest.js - this just avoids installing deps / running node at
+      # all when there's nothing to possibly check. Runs before "Install
+      # dependencies" so most ticks (nothing active) skip npm install too.
       - name: Check for active automations
         id: check
         if: github.event_name == 'schedule'
         run: |
           HAS_ACTIVE=$(node -e "const a=require('./automations.json');console.log(a.some(x=>!x.paused)?'true':'false')")
           echo "has_active=$HAS_ACTIVE" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        if: github.event_name == 'workflow_dispatch' || steps.check.outputs.has_active == 'true'
+        run: npm install
 
       - name: Run digest
         id: rundigest
