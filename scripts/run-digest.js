@@ -208,15 +208,16 @@ function buildPrompt(vendor, timeframe) {
 
   return `${HOLLAND_CONTEXT}
 ${groupContextBlock}
-Search for the most important ${vendor.name} update in the last ${timeframe} relevant to ${audience}.
+Search for the most important ${vendor.name} update in the last ${timeframe} relevant to ${audience}. Base this strictly on what you find via web search right now, not on general prior knowledge about this vendor, which may be outdated. If no significant update occurred in this timeframe, say so plainly (e.g. "No significant ${vendor.name} updates in the last ${timeframe}.") rather than stretching a minor or unrelated item to fill the summary.
 ${focusBlock}
 Reply with ONLY this JSON, no extra text:
 {"summary":"One sentence: what changed. One sentence: why it matters to ${recipientGroup || 'Holland 1916'}.","tags":["tag1"],"relevance_score":7,"action_needed":false,"sources":["https://..."]}
 
 tags: pick 1-2 from: ${VALID_TAGS.join(', ')}
 relevance_score: 1-10${focus ? ' — if a focus was specified and matched, weight relevance according to how important that specific angle is to Holland 1916' : ''}
-action_needed: true only if action is required before a deadline
-sources: 1-3 URLs of the actual pages you used via web search to find this update. Only include URLs you are confident are real — never fabricate one. If you have no real source URL, return an empty array.`;
+action_needed: default to false. Only set true if the source states a specific, concrete deadline or breaking change - not general urgency, hype, or marketing language.
+sources: 1-3 URLs of the actual pages you used via web search to find this update. Only include URLs you are confident are real — never fabricate one. If you have no real source URL, return an empty array.
+If you are not fully confident a detail is accurate, hedge it explicitly (e.g. "reportedly," "appears to") rather than stating it as settled fact.`;
 }
 
 async function analyzeVendorAI(vendor, timeframe) {
