@@ -7,6 +7,6 @@
     "node": "24.x"
   },
   "dependencies": {
-    "@google/genai": "^1.0.0"
+    "@anthropic-ai/sdk": "^0.115.0"
   }
 }

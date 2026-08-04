@@ -221,19 +221,28 @@ If you are not fully confident a detail is accurate, hedge it explicitly (e.g. "
 }
 
 async function analyzeVendorAI(vendor, timeframe) {
-  // Swap this import at the top once the API key is confirmed working
-  const { GoogleGenAI } = await import('@google/genai');
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const { default: Anthropic } = await import('@anthropic-ai/sdk');
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   const prompt = buildPrompt(vendor, timeframe);
+  // CLAUDE_MODEL lets us A/B test models (e.g. claude-haiku-4-5 vs
+  // claude-sonnet-5) without a code change. web_search_20250305 (not the
+  // newer dynamic-filtering variant) is used specifically because it's the
+  // one tool type both of those models support - keeps any A/B test
+  // comparing the model, not the search tool.
+  const model = process.env.CLAUDE_MODEL || 'claude-sonnet-5';
 
-  const result = await ai.models.generateContent({
-    model: 'gemini-2.0-flash',
-    contents: prompt,
-    tools: [{ googleSearch: {} }],
+  const response = await client.messages.create({
+    model,
+    max_tokens: 1024,
+    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+    messages: [{ role: 'user', content: prompt }],
   });
 
-  const text = result.response.text().trim();
+  const textBlock = response.content.filter(b => b.type === 'text').pop();
+  if (!textBlock) throw new Error(`No text response from Claude (stop_reason: ${response.stop_reason})`);
+
+  const text = textBlock.text.trim();
   const jsonStr = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
   const parsed = JSON.parse(jsonStr);
 

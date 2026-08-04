@@ -53,7 +53,8 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || steps.check.outputs.has_active == 'true'
         env:
           RUN_MODE:             ${{ github.event.inputs.run_mode || 'production' }}
-          GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
+          ANTHROPIC_API_KEY:    ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_MODEL:         claude-sonnet-5
           ENTRA_CLIENT_ID:      ${{ secrets.ENTRA_CLIENT_ID }}
           ENTRA_TENANT_ID:      ${{ secrets.ENTRA_TENANT_ID }}
           ENTRA_CLIENT_SECRET:  ${{ secrets.ENTRA_CLIENT_SECRET }}
