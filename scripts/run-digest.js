@@ -36,7 +36,7 @@ const HOLLAND_CONTEXT = `Holland 1916 is a manufacturing holding company (North 
 - Holland Interface Solutions (HIS): membrane switches, touchscreens, keypads, graphic overlays
 - Holland RFID (HRFID): ruggedized RFID tags/readers for harsh environments (oil & gas, mining, rigging)
 
-The Holland Operating System (HOS) is their custom Salesforce-based platform (built with Apex, Flows, and Skuid) that runs the full order lifecycle — sales quoting, order entry, manufacturing execution, and shipping — in one system. Because HOS is built directly on Salesforce, any Salesforce platform change (API deprecations, Flow/Apex limits, UI changes) can directly affect HOS and deserves extra scrutiny.
+The Holland Operating System (HOS) is their custom Salesforce-based platform (Apex, Flows, Skuid) covering quoting through shipping in one system.
 
 Tech stack includes Salesforce, Microsoft 365, Atlassian, Cloudflare, and AccountingSeed. They operate ISO 9001 / ISO 13485 quality environments.`;
 
@@ -208,9 +208,13 @@ function buildPrompt(vendor, timeframe) {
 
   return `${HOLLAND_CONTEXT}
 ${groupContextBlock}
-Search for the most important ${vendor.name} update in the last ${timeframe} relevant to ${audience}. Base this strictly on what you find via web search right now, not on general prior knowledge about this vendor, which may be outdated. If no significant update occurred in this timeframe, say so plainly (e.g. "No significant ${vendor.name} updates in the last ${timeframe}.") rather than stretching a minor or unrelated item to fill the summary.
+TASK: Search for the most important ${vendor.name} update in the last ${timeframe} relevant to ${audience}. Base this strictly on what you find via web search right now, not on general prior knowledge about this vendor, which may be outdated.
+
+VENDOR LOCK: This report is about ${vendor.name} and ONLY ${vendor.name} — not any other vendor mentioned above, not a similarly-named or adjacent product, unless ${vendor.name} literally is that company. Before including anything in your summary, verify it comes from ${vendor.name} itself (its own product, blog, docs, or official announcements). If your search results turn out to be about a different company or product, discard them and search again, or fall back to the no-update case below. Do not fill space with news about a different vendor just because it's tangentially related to Holland 1916's stack.
+
+If no significant ${vendor.name} update occurred in this timeframe, say so plainly (e.g. "No significant ${vendor.name} updates in the last ${timeframe}.") rather than stretching a minor, unrelated, or off-vendor item to fill the summary.
 ${focusBlock}
-Reply with ONLY this JSON, no extra text:
+OUTPUT FORMAT — strict: Reply with ONLY the JSON object below. No preamble, no explanation, no markdown fence, nothing before or after it — your entire response must be valid JSON and nothing else:
 {"summary":"One sentence: what changed. One sentence: why it matters to ${recipientGroup || 'Holland 1916'}.","tags":["tag1"],"relevance_score":7,"action_needed":false,"sources":["https://..."]}
 
 tags: pick 1-2 from: ${VALID_TAGS.join(', ')}
@@ -234,7 +238,11 @@ async function analyzeVendorAI(vendor, timeframe) {
 
   const response = await client.messages.create({
     model,
-    max_tokens: 1024,
+    // The whole search-and-reason loop (query text, tool_use blocks, etc.)
+    // shares this budget, not just the final JSON - a vendor needing a
+    // couple of search rounds can exhaust a tight ceiling before ever
+    // writing the answer (stop_reason: "max_tokens", no text block at all).
+    max_tokens: 4096,
     tools: [{ type: 'web_search_20250305', name: 'web_search' }],
     messages: [{ role: 'user', content: prompt }],
   });
