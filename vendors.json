@@ -4,7 +4,7 @@
     "name": "Salesforce",
     "color": "#0070BA",
     "active": true,
-    "focus": "",
+    "focus": "f",
     "recipientGroup": "",
     "requiredContext": ""
   },
