@@ -204,6 +204,16 @@ function buildPrompt(vendor, timeframe) {
     ? `\nThe user has specifically asked you to prioritize this angle if relevant: "${focus}"\nIf there is a real, recent update matching that focus, lead the summary with it and score relevance based on how much it matters to Holland 1916.\nIf there is no recent news matching that focus, say so explicitly at the start of the summary (e.g. "No recent news on ${focus}.") and then report the single most important general ${vendor.name} update instead.\n`
     : '';
 
+  const requiredContext = (vendor.requiredContext || '').trim();
+  // Distinct from focusBlock: focus is an angle to prioritize *if relevant*;
+  // this is context the user says must be worked into the summary whenever
+  // it applies, not merely considered - e.g. a standing fact about how
+  // Holland uses this vendor that should always inform the "why it matters"
+  // sentence rather than being dropped for brevity.
+  const requiredContextBlock = requiredContext
+    ? `\nREQUIRED CONTEXT: "${requiredContext}"\nWork this into your summary whenever it's at all relevant to what you find - don't drop it for brevity. If nothing you found relates to it, you may omit it rather than forcing an unrelated mention.\n`
+    : '';
+
   const groupContextBlock = buildGroupContextBlock(vendor);
 
   return `${HOLLAND_CONTEXT}
@@ -213,7 +223,7 @@ TASK: Search for the most important ${vendor.name} update in the last ${timefram
 VENDOR LOCK: This report is about ${vendor.name} and ONLY ${vendor.name} — not any other vendor mentioned above, not a similarly-named or adjacent product, unless ${vendor.name} literally is that company. Before including anything in your summary, verify it comes from ${vendor.name} itself (its own product, blog, docs, or official announcements). If your search results turn out to be about a different company or product, discard them and search again, or fall back to the no-update case below. Do not fill space with news about a different vendor just because it's tangentially related to Holland 1916's stack.
 
 If no significant ${vendor.name} update occurred in this timeframe, say so plainly (e.g. "No significant ${vendor.name} updates in the last ${timeframe}.") rather than stretching a minor, unrelated, or off-vendor item to fill the summary.
-${focusBlock}
+${focusBlock}${requiredContextBlock}
 OUTPUT FORMAT — strict: Reply with ONLY the JSON object below. No preamble, no explanation, no markdown fence, nothing before or after it — your entire response must be valid JSON and nothing else:
 {"summary":"One sentence: what changed. One sentence: why it matters to ${recipientGroup || 'Holland 1916'}.","tags":["tag1"],"relevance_score":7,"action_needed":false,"sources":["https://..."]}
 

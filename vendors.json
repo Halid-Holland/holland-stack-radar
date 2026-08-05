@@ -5,7 +5,35 @@
     "color": "#0070BA",
     "active": true,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
+  },
+  {
+    "id": "skuid",
+    "name": "Skuid",
+    "color": "#00A99D",
+    "active": true,
+    "focus": "",
+    "recipientGroup": "",
+    "requiredContext": ""
+  },
+  {
+    "id": "mulesoft",
+    "name": "MuleSoft",
+    "color": "#00A1DF",
+    "active": true,
+    "focus": "",
+    "recipientGroup": "",
+    "requiredContext": ""
+  },
+  {
+    "id": "salesforce-manufacturing",
+    "name": "Salesforce Manufacturing Cloud",
+    "color": "#005FA3",
+    "active": true,
+    "focus": "",
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "m365",
@@ -13,7 +41,8 @@
     "color": "#0078D4",
     "active": false,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "atlassian",
@@ -21,7 +50,8 @@
     "color": "#0052CC",
     "active": true,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "cloudflare",
@@ -29,7 +59,8 @@
     "color": "#E07514",
     "active": true,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "accountingseed",
@@ -37,7 +68,8 @@
     "color": "#16803A",
     "active": true,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "openai",
@@ -45,7 +77,8 @@
     "color": "#10A37F",
     "active": true,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "anthropic",
@@ -53,7 +86,8 @@
     "color": "#C35D38",
     "active": true,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "github",
@@ -61,7 +95,8 @@
     "color": "#24292F",
     "active": true,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "logik",
@@ -69,15 +104,17 @@
     "color": "#2563EB",
     "active": false,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "gearset",
     "name": "Gearset",
     "color": "#6C2BD9",
-    "active": false,
+    "active": true,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "sentry",
@@ -85,7 +122,8 @@
     "color": "#362D59",
     "active": false,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "zoominfo",
@@ -93,7 +131,8 @@
     "color": "#F97316",
     "active": false,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "slack",
@@ -101,7 +140,8 @@
     "color": "#4A154B",
     "active": false,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "zoom",
@@ -109,7 +149,8 @@
     "color": "#2D8CFF",
     "active": false,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "docusign",
@@ -117,15 +158,17 @@
     "color": "#FF6B00",
     "active": false,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "tableau",
     "name": "Tableau",
     "color": "#E97627",
-    "active": false,
+    "active": true,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "okta",
@@ -133,7 +176,8 @@
     "color": "#007DC1",
     "active": false,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "zendesk",
@@ -141,7 +185,8 @@
     "color": "#03363D",
     "active": false,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "workday",
@@ -149,7 +194,8 @@
     "color": "#F1572C",
     "active": false,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "hubspot",
@@ -157,7 +203,8 @@
     "color": "#FF7A59",
     "active": false,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "box",
@@ -165,7 +212,8 @@
     "color": "#0061D5",
     "active": false,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   },
   {
     "id": "stripe",
@@ -173,6 +221,7 @@
     "color": "#635BFF",
     "active": false,
     "focus": "",
-    "recipientGroup": ""
+    "recipientGroup": "",
+    "requiredContext": ""
   }
 ]
