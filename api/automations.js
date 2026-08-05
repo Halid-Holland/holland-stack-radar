@@ -47,77 +47,84 @@ export default async function handler(req, res) {
       if (!Array.isArray(incoming)) return res.status(400).json({ error: 'Expected automations array' });
       const deletionList = Array.isArray(deletions) ? deletions : [];
 
-      const file = await getFile(token);
-      const oldAutomations = JSON.parse(Buffer.from(file.content, 'base64').toString('utf8'));
-      const oldById = new Map(oldAutomations.map(a => [a.id, a]));
-
       // Automations saved before this guard existed have no ownerToken - leave
       // them editable by anyone (no regression) until the first edit after this
       // change, at which point they get locked to whoever's browser made it.
       const canAct = (old, presentedToken) => !old.ownerToken || old.ownerToken === presentedToken;
 
-      const deleteIds = new Set(
-        deletionList
-          .filter(d => oldById.has(d.id) && canAct(oldById.get(d.id), d.ownerToken))
-          .map(d => d.id)
-      );
+      // Two saves close together (e.g. one browser autosaving while another
+      // deletes) can each fetch the same sha, then race to PUT - whichever
+      // lands second is rejected by GitHub with 409 since its sha is now
+      // stale. Refetch and redo the merge on that specific conflict instead of
+      // surfacing a spurious failure to the user.
+      const MAX_ATTEMPTS = 5;
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        const file = await getFile(token);
+        const oldAutomations = JSON.parse(Buffer.from(file.content, 'base64').toString('utf8'));
+        const oldById = new Map(oldAutomations.map(a => [a.id, a]));
 
-      const incomingById = new Map(incoming.map(a => [a.id, a]));
-      const finalList = [];
-      const newTokens = {};
+        const deleteIds = new Set(
+          deletionList
+            .filter(d => oldById.has(d.id) && canAct(oldById.get(d.id), d.ownerToken))
+            .map(d => d.id)
+        );
 
-      for (const [id, old] of oldById) {
-        if (deleteIds.has(id)) continue;
-        const item = incomingById.get(id);
-        if (!item) { finalList.push(old); continue; } // missing without an authorized deletion - keep it
+        const incomingById = new Map(incoming.map(a => [a.id, a]));
+        const finalList = [];
+        const newTokens = {};
 
-        // Every save round-trips the whole list, so most items here are just
-        // being echoed back unchanged (not an edit attempt). Only touch
-        // ownership when a field actually differs - otherwise a save
-        // triggered by an unrelated automation would silently "claim" every
-        // legacy (pre-guard) automation for whoever happens to save first.
-        const { ownerToken: _presented, ...itemFields } = item;
-        const { ownerToken: _old, ...oldFields } = old;
-        if (JSON.stringify(itemFields) === JSON.stringify(oldFields)) { finalList.push(old); continue; }
+        for (const [id, old] of oldById) {
+          if (deleteIds.has(id)) continue;
+          const item = incomingById.get(id);
+          if (!item) { finalList.push(old); continue; } // missing without an authorized deletion - keep it
 
-        if (canAct(old, item.ownerToken)) {
-          const ownerToken = old.ownerToken || randomUUID();
-          if (!old.ownerToken) newTokens[id] = ownerToken; // first claim of a legacy automation
-          finalList.push({ ...item, ownerToken });
-        } else {
-          finalList.push(old); // wrong/missing token - ignore the attempted edit
+          // Every save round-trips the whole list, so most items here are just
+          // being echoed back unchanged (not an edit attempt). Only touch
+          // ownership when a field actually differs - otherwise a save
+          // triggered by an unrelated automation would silently "claim" every
+          // legacy (pre-guard) automation for whoever happens to save first.
+          const { ownerToken: _presented, ...itemFields } = item;
+          const { ownerToken: _old, ...oldFields } = old;
+          if (JSON.stringify(itemFields) === JSON.stringify(oldFields)) { finalList.push(old); continue; }
+
+          if (canAct(old, item.ownerToken)) {
+            const ownerToken = old.ownerToken || randomUUID();
+            if (!old.ownerToken) newTokens[id] = ownerToken; // first claim of a legacy automation
+            finalList.push({ ...item, ownerToken });
+          } else {
+            finalList.push(old); // wrong/missing token - ignore the attempted edit
+          }
         }
-      }
-      for (const item of incoming) {
-        if (!oldById.has(item.id)) {
-          const ownerToken = randomUUID();
-          finalList.push({ ...item, ownerToken });
-          newTokens[item.id] = ownerToken;
+        for (const item of incoming) {
+          if (!oldById.has(item.id)) {
+            const ownerToken = randomUUID();
+            finalList.push({ ...item, ownerToken });
+            newTokens[item.id] = ownerToken;
+          }
         }
+
+        const content = Buffer.from(JSON.stringify(finalList, null, 2)).toString('base64');
+
+        const putRes = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/contents/${FILE}`, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/vnd.github+json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: 'Update automations',
+            content,
+            sha: file.sha,
+          }),
+        });
+
+        if (putRes.ok) return res.status(200).json({ success: true, newTokens });
+
+        const err = await putRes.json().catch(() => ({}));
+        if (putRes.status !== 409) return res.status(500).json({ error: err.message || 'GitHub write failed' });
+        if (attempt === MAX_ATTEMPTS - 1) return res.status(500).json({ error: err.message || 'Conflicted after retries' });
       }
-
-      const content = Buffer.from(JSON.stringify(finalList, null, 2)).toString('base64');
-
-      const putRes = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/contents/${FILE}`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/vnd.github+json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: 'Update automations',
-          content,
-          sha: file.sha,
-        }),
-      });
-
-      if (!putRes.ok) {
-        const err = await putRes.json();
-        return res.status(500).json({ error: err.message });
-      }
-
-      return res.status(200).json({ success: true, newTokens });
     } catch (err) {
       console.error(err);
       return res.status(500).json({ error: err.message });
